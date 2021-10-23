@@ -1,19 +1,26 @@
 #pragma once
 
 #include <cstddef>
+#include <concepts>
 #include "base.hpp"
 
 namespace dna
 {
 
 template<typename T>
-concept bool ByteBuffer = requires(T a) {
-	{ static_cast<std::size_t>(a.size()) } -> std::size_t;
-	{ a[0] } -> std::byte;
+concept ByteBuffer = requires(T a) {
+	{ a.size() } -> std::convertible_to<std::size_t>;
+	{ a[0] } -> std::convertible_to<std::byte>;
 };
 
 template<ByteBuffer T>
 class sequence_buffer;
+
+template <typename T>
+concept is_sequence_buffer = requires(const T sequence_buffer) {
+	typename T::buffer_type;
+	{ sequence_buffer.buffer() } -> std::common_reference_with<typename T::buffer_type>;
+};
 
 template<ByteBuffer T>
 class sequence_buffer_iterator
@@ -122,6 +129,7 @@ class sequence_buffer
 	std::size_t size_;
 public:
 	using iterator = sequence_buffer_iterator<T>;
+	using buffer_type = T;
 
 	constexpr sequence_buffer(T buffer, std::size_t size = 0) :
 			buffer_(std::forward<T>(buffer)),
