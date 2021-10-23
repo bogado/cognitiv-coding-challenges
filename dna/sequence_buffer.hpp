@@ -166,7 +166,7 @@ public:
 
 	constexpr T& buffer() noexcept
 	{
-		buffer_;
+		return buffer_;
 	}
 };
 
