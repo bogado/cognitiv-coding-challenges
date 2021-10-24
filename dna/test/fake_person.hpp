@@ -1,6 +1,9 @@
 #pragma once
 
+#include "fake_person_fixture.hpp"
+
 #include <array>
+#include <cstddef>
 #include "fake_stream.hpp"
 
 class fake_person
@@ -24,10 +27,8 @@ class fake_person
 
 public:
 	template<typename T>
-	fake_person(const T& chromosome_data, std::size_t chunk_size = 512)
+	fake_person(const T& chromosome_data, std::size_t chunk_size = default_chunk_size)
 	{
-		if (chromosome_data.size() != chroms_.size())
-			throw std::invalid_argument("chromosome data does not match expected size");
 
 		std::size_t index = 0;
 		auto it = chromosome_data.begin();
@@ -39,7 +40,7 @@ public:
 	{
 
 		check_index(chromosome_index);
-		return chroms_[chromosome_index];
+		return chroms_[chromosome_index];  // NOLINT:cppcoreguidelines-pro-bounds-constant-array-index
 	}
 
 	// Copy the fake_stream on the const verstion

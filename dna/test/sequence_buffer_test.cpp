@@ -42,5 +42,4 @@ TEST_CASE("Can use an iterator", "[seqbuf]")
 	REQUIRE(bases[5] == dna::A);
 	REQUIRE(bases[6] == dna::G);
 	REQUIRE(bases[7] == dna::C);
-
 }
