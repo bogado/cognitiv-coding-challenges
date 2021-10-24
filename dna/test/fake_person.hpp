@@ -5,7 +5,23 @@
 
 class fake_person
 {
-	std::array<fake_stream, 23> chroms_;
+	static constexpr auto number_of_chromossomes = 23;
+	static constexpr auto default_chunk_size = 512;
+
+	std::array<fake_stream, number_of_chromossomes> chroms_;
+
+	static constexpr void check_index(std::integral auto index)
+	{
+		if constexpr (std::signed_integral<decltype(index)>) {
+			if (index < 0) {
+				throw std::invalid_argument("index cannot be negative");
+			}
+		}
+		if (index >= number_of_chromossomes) {
+			throw std::invalid_argument("index is out of range for the number of chromosomes available");
+		}
+	}
+
 public:
 	template<typename T>
 	fake_person(const T& chromosome_data, std::size_t chunk_size = 512)
@@ -19,12 +35,19 @@ public:
 			chroms_[index] = fake_stream(*it, chunk_size);
 	}
 
-	const fake_stream& chromosome(std::size_t chromosome_index) const
+	fake_stream& chromosome(std::size_t chromosome_index)
 	{
-		if (chromosome_index >= chroms_.size())
-			throw std::invalid_argument("index is out of range for the number of chromosomes available");
 
+		check_index(chromosome_index);
 		return chroms_[chromosome_index];
+	}
+
+	// Copy the fake_stream on the const verstion
+	// This is necessary to be able to seek on this object.
+	fake_stream chromosome(std::size_t chromosome_index) const
+	{
+		check_index(chromosome_index);
+		return chroms_[chromosome_index];  // NOLINT:cppcoreguidelines-pro-bounds-constant-array-index
 	}
 
 	constexpr std::size_t chromosomes() const
