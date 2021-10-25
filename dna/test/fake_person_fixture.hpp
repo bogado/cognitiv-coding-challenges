@@ -20,7 +20,7 @@ enum class telomere_status {
     EXTRA_PARTIAL_END
 };
 
-template <size_t... SIZE>
+template <std::size_t... SIZE>
 constexpr auto join_sequences(const std::array<dna::base, SIZE>&... sub_streams)
 {
     auto result = std::array<dna::base, (SIZE + ...)> {};
@@ -30,7 +30,7 @@ constexpr auto join_sequences(const std::array<dna::base, SIZE>&... sub_streams)
 }
 
 //requires(std::same_as<std::ranges::range_value_t<SEQ>, dna::base>)
-template <size_t COUNT, size_t SIZE>
+template <std::size_t COUNT, std::size_t SIZE>
 constexpr auto repeat_sequence(const std::array<dna::base, SIZE>& sequence)
 {
 	if constexpr (COUNT == 0) {
@@ -71,7 +71,7 @@ constexpr auto incomplete_telomere = std::invoke([]() {
 
 constexpr auto empty_telomere = incomplete_telomere<telomere_status::COMPLETE>;
 
-template <size_t COUNT, telomere_status STATUS>
+template <std::size_t COUNT, telomere_status STATUS>
 constexpr auto make_fake_telomere()
 {
     auto start_seq = std::invoke([]() {
