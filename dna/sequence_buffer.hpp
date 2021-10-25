@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <concepts>
+#include <iterator>
+#include <ranges>
 #include "base.hpp"
 
 namespace dna
@@ -193,6 +195,32 @@ std::ostream& operator<<(std::ostream& os, const sequence_buffer<T>& buf)
 	for (auto i : buf)
 		os << i;
 	return os;
+}
+
+template <std::ranges::range SEQUENCE_TYPE, std::output_iterator<std::byte> OUTPUT_ITERATOR>
+requires(std::same_as<std::ranges::range_value_t<SEQUENCE_TYPE>, dna::base>)
+constexpr auto pack_sequence(const SEQUENCE_TYPE& source, OUTPUT_ITERATOR out) {
+	return std::generate_n(out, std::ranges::size(source) / packed_size::value,
+	 [&source, iterator = std::begin(source)]() mutable {
+		auto data = std::array<base, packed_size::value>{};
+		std::generate(std::begin(data), std::end(data),
+			[&iterator, end = std::end(source)]() {
+				if (iterator == end) {
+					return base {};
+				}
+				auto result = *iterator;
+				std::advance(iterator);
+				return result;
+			});
+		return pack(data[0], data[1], data[2], data[3]);
+	});
+}
+
+template <size_t SIZE>
+constexpr auto to_sequence_buffer(std::array<base, SIZE> sequence)
+{
+	auto result = std::array<std::byte, SIZE/4>{};
+	return sequence_buffer(to_sequence_buffer(sequence), SIZE);
 }
 
 }
