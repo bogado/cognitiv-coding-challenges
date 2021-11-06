@@ -2,138 +2,79 @@
 #define FAKE_PERSON_FIXTURE_HPP_INCLUDED
 
 #include "base.hpp"
-#include "telomere.hpp"
+#include "person.hpp"
 #include "util.hpp"
+#include "sequence_buffer.hpp"
+
+#include "./fake_telomere_fixture.hpp"
 
 #include <concepts>
 #include <array>
+#include <cstddef>
 #include <iterator>
 #include <type_traits>
 #include <algorithm>
 #include <span>
 #include <ranges>
+#include <utility>
+
+// NOLINT: cppcoreguidelines-avoid-magic-numbers
+// This don't make sense for tests.
 
 namespace fixtures {
-enum class telomere_status {
-    COMPLETE,
-    EXTRA_PARTIAL_START,
-    EXTRA_PARTIAL_END
+
+template <typename DNA_BASE_GENERATOR>
+concept dna_base_generator = requires {
+	util::simple_generator<DNA_BASE_GENERATOR>;
+	std::same_as<typename DNA_BASE_GENERATOR::value_type, dna::base>;
 };
 
-template <std::size_t... SIZE>
-constexpr auto join_sequences(const std::array<dna::base, SIZE>&... sub_streams)
-{
-    auto result = std::array<dna::base, (SIZE + ...)> {};
-	auto iterator = std::begin(result);
-	[[maybe_unused]] auto unused = ((std::copy(std::begin(sub_streams), std::end(sub_streams), iterator) != std::end(result)) && ...);
-    return result;
-}
+template <size_t SEED>
+using base_random_generator_type = util::constexpr_random<dna::base, dna::A, dna::T, SEED>;
 
-//requires(std::same_as<std::ranges::range_value_t<SEQ>, dna::base>)
-template <std::size_t COUNT, std::size_t SIZE>
-constexpr auto repeat_sequence(const std::array<dna::base, SIZE>& sequence)
-{
-	if constexpr (COUNT == 0) {
-		return std::array<dna::base, 0>{};
-	} else {
-		auto result = std::array<dna::base, SIZE * COUNT>{};
-		for (auto iterator = std::begin(result); iterator != std::end(result);) {
-			iterator = std::copy(std::begin(sequence), std::end(sequence), iterator);
+template <std::integral auto START_SEED = 0LLU>
+const constexpr auto random_sequence_generator = base_random_generator_type<START_SEED>{};
+
+template <std::integral auto START_SEED>
+constexpr auto random_sequence_generator_with_mutations(std::convertible_to<std::size_t> auto ...positions) {
+	return util::generator(
+    [original = random_sequence_generator<START_SEED>, positions...](size_t pos) mutable {
+        auto result = original();
+        if (((pos == positions) || ... || false)) {
+            switch (result) {
+			case dna::A:
+                return dna::T;
+			case dna::G:
+                return dna::A;
+			case dna::T:
+                return dna::C;
+			case dna::C:
+                return dna::G;
+            }
 		}
 		return result;
-	}
-}
-
-template <telomere_status STATUS>
-constexpr auto incomplete_telomere = std::invoke([]() {
-    const auto SKIP_START = 4;
-    const auto SKIP_END   = dna::TelomereSize / 2;
-
-    if constexpr (STATUS == telomere_status::COMPLETE) {
-        return std::array<dna::base, 0> {};
-    } else if constexpr (STATUS == telomere_status::EXTRA_PARTIAL_START) {
-		auto result = std::array<dna::base, dna::TelomereSize - SKIP_START>{};
-		std::copy(
-			std::next(std::begin(dna::Telomere), SKIP_START),
-            std::end(dna::Telomere),
-			std::begin(result));
-		return result;
-
-    } else if constexpr (STATUS == telomere_status::EXTRA_PARTIAL_END) {
-		auto result = std::array<dna::base, dna::TelomereSize - SKIP_END>{};
-		std::copy(
-            std::begin(dna::Telomere),
-            std::prev(std::end(dna::Telomere), SKIP_END),
-			std::begin(result));
-		return result;
-    }
-});
-
-constexpr auto empty_telomere = incomplete_telomere<telomere_status::COMPLETE>;
-
-template <std::size_t COUNT, telomere_status STATUS>
-constexpr auto make_fake_telomere()
-{
-    auto start_seq = std::invoke([]() {
-        if constexpr (STATUS == telomere_status::EXTRA_PARTIAL_START) {
-            return incomplete_telomere<telomere_status::EXTRA_PARTIAL_START>;
-        } else {
-            return empty_telomere;
-        }
     });
-
-	auto middle = repeat_sequence<COUNT>(dna::Telomere);
-
-    auto end_seq = std::invoke([]() {
-        if constexpr (STATUS == telomere_status::EXTRA_PARTIAL_END) {
-            return incomplete_telomere<telomere_status::EXTRA_PARTIAL_END>;
-        } else {
-            return empty_telomere;
-        }
-    });
-
-    return join_sequences(start_seq, middle, end_seq);
 }
 
-template <std::size_t COUNT, telomere_status STATUS = telomere_status::COMPLETE>
-constexpr auto fake_telomere = make_fake_telomere<COUNT, STATUS>();
+namespace test {
+    enum class op {
+        equal,
+        not_equal
+    };
 
-static_assert(
-    fake_telomere<0, telomere_status::EXTRA_PARTIAL_START>[0] == dna::G
-        && fake_telomere<0, telomere_status::EXTRA_PARTIAL_START>[1] == dna::G,
-    "Invalid fake partial start Telomere");
 
-static_assert(
-    fake_telomere<0, telomere_status::EXTRA_PARTIAL_END>[0] == dna::T
-        && fake_telomere<0, telomere_status::EXTRA_PARTIAL_END>[1] == dna::T
-        && fake_telomere<0, telomere_status::EXTRA_PARTIAL_END>[2] == dna::A,
-    "Invalid fake end partial Telomere");
-
-static_assert(
-    fake_telomere<1, telomere_status::COMPLETE>[0] == dna::T
-        && fake_telomere<1, telomere_status::COMPLETE>[1] == dna::T
-        && fake_telomere<1, telomere_status::COMPLETE>[2] == dna::A
-        && fake_telomere<1, telomere_status::COMPLETE>[3] == dna::G
-        && fake_telomere<1, telomere_status::COMPLETE>[4] == dna::G,
-    "Invalid fake end partial Telomere");
-
-static_assert(
-    std::size(fake_telomere<0, telomere_status::COMPLETE>) == 0
-        && std::size(fake_telomere<1, telomere_status::COMPLETE>) == dna::TelomereSize
-        && std::size(fake_telomere<2, telomere_status::COMPLETE>) == 2 * dna::TelomereSize,
-    "Invalid size for fake_telomere");
-
-template <std::unsigned_integral auto SEED>
-using base_random_generator_type = util::constexpr_random<dna::base, dna::G, dna::A, SEED>;
-
-template <std::integral auto SIZE, std::unsigned_integral auto START_SEED>
-constexpr auto random_sequence() {
-	auto random_generator = base_random_generator_type<START_SEED>{};
-	auto result = std::array<dna::base, SIZE>{};
-	std::generate(std::begin(result), std::end(result), random_generator);
-	return result;
+	static_assert([a = random_sequence_generator<2000>]() mutable { return a.skip(100)(); }() == dna::C);
+	static_assert(
+		skiped_copy(random_sequence_generator<2000>, 99)()
+		== skiped_copy(random_sequence_generator_with_mutations<2000>(100),99)()
+	);
+	static_assert(
+		skiped_copy(random_sequence_generator<2000>, 100)()
+		!= skiped_copy(random_sequence_generator_with_mutations<2000>(100),100)()
+	);
 }
 
+// source: https://en.wikipedia.org/wiki/Human_genome#Molecular_organization_and_gene_content
 constexpr auto chromossome_sizes = std::array {
     48'956'422 ,
 	42'193'529 ,
@@ -161,17 +102,151 @@ constexpr auto chromossome_sizes = std::array {
 	57'227'415
 };
 
+template <int NUM, auto DIVIDER =10'000>
+requires (NUM < std::size(chromossome_sizes))
+auto const constexpr_size_chromossome = chromossome_sizes[NUM]/DIVIDER;
+
 static constexpr auto chromossome_X = 24;
 static constexpr auto chromossome_Y = 23;
 
-template <int NUM, size_t TELOMERE_START_COUNT, size_t TELOMERE_END_COUNT, telomere_status STATUS = telomere_status::COMPLETE>
-constexpr auto fake_chomossome = std::invoke([]() {
-	return join_sequences(
-		fake_telomere<TELOMERE_START_COUNT, STATUS>,
-		random_sequence<chromossome_sizes[NUM], NUM>(),
-		fake_telomere<TELOMERE_END_COUNT, STATUS>
-	);
-});
+
+template <size_t NUM>
+requires (NUM < std::size(chromossome_sizes))
+constexpr auto make_base_fake_chromossome_generator(const std::convertible_to<size_t> auto ... mutations) noexcept
+{
+    return std::invoke([=]() {
+        if constexpr (sizeof...(mutations) == 0) {
+            return base_random_generator_type<NUM>();
+        } else {
+            return random_sequence_generator_with_mutations<NUM>(mutations...);
+        }
+    });
+}
+
+template <int                        NUM,
+    std::convertible_to<size_t> auto TELOMERE_START_COUNT = 10,
+    std::convertible_to<size_t> auto TELOMERE_END_COUNT   = TELOMERE_START_COUNT>
+constexpr auto fake_chromossome_size = std::size(fake_telomeres<TELOMERE_START_COUNT>)
+                                     + std::size(fake_telomeres<TELOMERE_END_COUNT>)
+                                     + constexpr_size_chromossome<NUM>;
+
+template <int NUM,
+		 std::convertible_to<size_t> auto TELOMERE_START_COUNT = 10,
+		 std::convertible_to<size_t> auto TELOMERE_END_COUNT = TELOMERE_START_COUNT>
+requires (NUM < std::size(chromossome_sizes))
+constexpr auto make_fake_chromossome_generator(std::convertible_to<size_t> auto... mutations) noexcept
+{
+	auto start_telomere = fake_telomeres<TELOMERE_START_COUNT>;
+	auto end_telomere = fake_telomeres<TELOMERE_END_COUNT>;
+	auto base_generator = make_base_fake_chromossome_generator<NUM>(mutations...);
+
+	return util::generator([start_telomere, base_generator, end_telomere](std::size_t pos) mutable {
+		const auto start_sequence     = std::size(start_telomere);
+		const auto start_end_telomere = start_sequence + constexpr_size_chromossome<NUM>;
+	
+		if (pos > fake_chromossome_size<NUM, TELOMERE_START_COUNT, TELOMERE_END_COUNT>) { return dna::A; }
+		if (pos < std::size(start_telomere)) {
+			return start_telomere[pos];
+		}
+
+		if (pos >= start_end_telomere && (pos - start_end_telomere) < std::size(end_telomere)) {
+			return end_telomere[pos - start_end_telomere];
+		}
+
+		return base_generator();
+	});
+}
+
+template <int NUM,
+		 std::convertible_to<size_t> auto TELOMERE_START_COUNT = 10,
+		 std::convertible_to<size_t> auto TELOMERE_END_COUNT = TELOMERE_START_COUNT>
+requires (NUM < std::size(chromossome_sizes))
+constexpr auto make_sequence_buffer_storage(std::convertible_to<size_t> auto... mutations) noexcept {
+	return util::generate_array<fake_chromossome_size<NUM, TELOMERE_START_COUNT, TELOMERE_END_COUNT>>(make_fake_chromossome_generator<NUM, TELOMERE_START_COUNT, TELOMERE_END_COUNT>(mutations...));
+}
+
+template <size_t SIZE>
+constexpr auto to_sequence_array(std::array<dna::base, SIZE> sequence) noexcept
+{
+	auto result = std::array<std::byte, SIZE/4 + ((SIZE % 4 != 0)?1:0)>{};
+	pack_sequence(sequence, std::begin(result));
+	return result;
+}
+
+template <int NUM, std::convertible_to<std::size_t> auto ... MUTATIONS>
+requires (NUM < std::size(chromossome_sizes))
+constinit auto fake_sequence_buffer_storage = to_sequence_array(make_sequence_buffer_storage<NUM>(MUTATIONS...));
+
+using fake_sequence_buffer_type = dna::sequence_buffer<std::span<std::byte>>;
+
+static_assert(dna::is_sequence_buffer<fake_sequence_buffer_type>);
+
+template <int NUM, std::convertible_to<std::size_t> auto ... MUTATIONS>
+requires (NUM < std::size(chromossome_sizes))
+constexpr auto fake_sequence_buffer = fake_sequence_buffer_type(fake_sequence_buffer_storage<NUM, MUTATIONS...>);
+
+struct fake_helix_stream_type {
+	fake_sequence_buffer_type buffer;
+
+	void seek(long pos)
+	{
+		buffer.buffer() = buffer.buffer().subspan(pos);
+	}
+
+	auto read()
+	{
+		return buffer;
+	}
+
+	std::size_t size() const
+	{
+		return std::size(buffer.buffer());
+	}
+};
+
+static_assert(dna::HelixStream<fake_helix_stream_type>);
+
+template <int NUM, std::convertible_to<std::size_t> auto ... MUTATIONS>
+requires(NUM < std::size(chromossome_sizes)) constexpr auto fake_helix_stream = fake_helix_stream_type {
+    fake_sequence_buffer<NUM, MUTATIONS...>
+};
+
+struct fake_person {
+	std::array<fake_helix_stream_type, std::size(chromossome_sizes)> data;
+
+	constexpr auto chromosome(int p) {
+		return data[p];
+	}
+
+	constexpr size_t chromosomes() noexcept
+	{
+		return data.size();
+	}
+};
+
+template<std::convertible_to<size_t> auto ... MUTATIONS>
+consteval auto make_fake_person()
+{
+	return []<size_t... NUMs>(std::index_sequence<NUMs...>) {
+		return fake_person{  {fake_helix_stream<NUMs, MUTATIONS...>... } };
+	}(std::make_index_sequence<std::size(chromossome_sizes)>());
+}
+
+template<auto ARRAY>
+requires (std::tuple_size_v<decltype(ARRAY)> > 0)
+consteval auto make_fake_person()
+{
+	return []<size_t... NUMs>(std::index_sequence<NUMs...>) {
+		return make_fake_person<std::get<NUMs>(ARRAY)...>();
+	}(std::make_index_sequence<std::tuple_size_v<decltype(ARRAY)>>());
+}
+
+constexpr auto mutations = std::array{
+	50, 60, 70, 90
+};
+
+extern const fake_person fake_person_fixture_std;
+extern const fake_person fake_person_fixture_mut;
 
 }
 
