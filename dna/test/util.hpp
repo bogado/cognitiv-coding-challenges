@@ -1,112 +1,116 @@
 #ifndef UTIL_HPP_INCLUDED
 #define UTIL_HPP_INCLUDED
 
+#include <bits/ranges_base.h>
 #include <concepts>
+#include <type_traits>
 #include <utility>
 #include <limits>
 #include <functional>
+#include <ranges>
 
 namespace util {
-
-	template<typename GENERATOR, typename VALUE>
-	concept simple_generator = requires (GENERATOR gen, const GENERATOR cgen) {
+	
+	template<typename GENERATOR>
+	concept simple_generator = requires (GENERATOR gen, const GENERATOR cgen)
+	{
 		std::invocable<GENERATOR>;
-		std::same_as<std::invoke_result_t<GENERATOR>, VALUE>;
-		{ gen.skip(size_t(0)) } -> std::same_as<GENERATOR>;
-		{ cgen.ended() } -> std::convertible_to<bool>;
-		{ cgen.consumed() } -> std::same_as<size_t>;
+		typename GENERATOR::value_type;
+		std::same_as<std::invoke_result_t<GENERATOR>, typename GENERATOR::value_type>;
+		{  gen.skip(size_t(0)) } -> std::same_as<GENERATOR>;
 	};
 
-	template <typename DOMAIN, DOMAIN MIN, DOMAIN MAX, std::unsigned_integral auto START_SEED = 0ULL, typename SEED_TYPE = decltype(START_SEED)>
-	requires(std::constructible_from<DOMAIN, SEED_TYPE> && std::convertible_to<DOMAIN, SEED_TYPE>)
-	struct constexpr_random {
+	template<typename TYPE, typename OTHER_TYPE>
+	concept explicitly_convertible_to = requires(TYPE value) {
+		{ static_cast<OTHER_TYPE>(value) } -> std::same_as<OTHER_TYPE>;
+	};
+
+	constexpr auto skiped_copy(simple_generator auto generator, size_t count = 1)
+	{
+		return generator.skip(count);
+	}
+
+	template <typename DOMAIN, DOMAIN MIN, DOMAIN MAX, std::integral auto START_SEED = 0ULL, std::integral SEED_TYPE = long long unsigned>
+	requires (explicitly_convertible_to<DOMAIN, SEED_TYPE>)
+	struct constexpr_random
+	{
 		using value_type = DOMAIN;
 		using seed_type  = SEED_TYPE;
 
 		static constexpr auto min_seed = static_cast<SEED_TYPE>(MIN);
 		static constexpr auto max_seed = static_cast<SEED_TYPE>(MAX);
 
-		seed_type seed = START_SEED;
-		size_t step = 0;
+		seed_type seed = static_cast<seed_type>(START_SEED);
 
 		// Constants used by the posix random: (see https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use)
 		static constexpr auto multiplier = 0x5DEECE66DLL;
 		static constexpr auto increment  = 11LL;
 		static constexpr auto modulo     = 1LL << 48;
 
-		static constexpr auto bit_range  = std::pair{15, 47};
+		static constexpr auto bit_range  = std::pair<seed_type, seed_type>{15, 47};
 
-		constexpr auto skip(size_t size) {
+		constexpr auto skip(size_t size = 1) {
 			for (int i = 0; i < size; i++) {
 				update_seed();
 			}
 			return *this;
 		}
 
+		constexpr auto skip(size_t size = 1) const {
+			auto copy = *this;
+			return copy.skip(size);
+		}
+
 		constexpr void update_seed() {
-			step++;
 			seed = (seed * multiplier + increment) % modulo;
+		}
+
+		static constexpr auto normalize_mask = static_cast<seed_type>((seed_type(1) < bit_range.second) -1);
+		constexpr static auto normalize(seed_type value) {
+			return value & normalize_mask >> bit_range.first;
 		}
 
 		[[nodiscard]]
 		constexpr auto raw_value() const {
-			return (seed && ((1 << bit_range.second) -1)) >> bit_range.first;
+			return normalize(seed);
 		}
 
 		[[nodiscard]]
 		constexpr value_type operator()() {
 			update_seed();
-			if constexpr ((MAX - MIN) <= ((1 << bit_range.second) - 1) >> bit_range.first)
-			return static_cast<value_type>((raw_value() + MIN) % (MAX - MIN)); // TODO: this is not uniform distributed but good enouth
-		}
-
-		auto ended() const {
-			return false;
-		}
-
-		auto consumed() const {
-			return step;
+			if constexpr ((max_seed - min_seed) <= normalize(std::numeric_limits<seed_type>::max()))
+			{
+				// TODO: this is not uniform distributed but good enouth
+				return static_cast<value_type>(raw_value() % (max_seed - min_seed) + min_seed);
+			} 
+			return static_cast<value_type>(seed % (max_seed - min_seed) + min_seed);
 		}
 	};
 
-	static_assert(simple_generator<constexpr_random<size_t, 0, 10>, size_t>);
+	static_assert(simple_generator<constexpr_random<size_t, 0, 10>>);
 
-	template <std::invocable<size_t> FUNCTION, size_t MAX = std::numeric_limits<size_t>::max()>
+	template <std::invocable<size_t> FUNCTION>
 	requires(!std::same_as<void, std::invoke_result_t<FUNCTION, size_t>>)
 	struct generator
 	{
 		using value_type = std::invoke_result_t<FUNCTION, size_t>;
+
+		FUNCTION generator_function;
 		size_t position = 0;
-		FUNCTION generator_method;
 
-		generator()
-		requires(std::default_initializable<FUNCTION>) :
-			generator_method{}
+		constexpr generator(FUNCTION&& func) :
+			generator_function(std::forward<FUNCTION>(func))
 		{}
 
-		template <typename FUNC_FOWARD>
-		generator(FUNC_FOWARD&& func) :
-			generator_method(std::forward<FUNC_FOWARD>(func))
-		{}
-
-		auto skip(size_t value) {
-			position = std::min(MAX, position + value);
+		constexpr auto skip(size_t value = 1)
+		{
+			position += value;
 			return (*this);
 		}
-
-		constexpr value_type operator()() {
-			if (ended()) {
-				return value_type{};
-			}
-			return generator_method(position++);
-		}
-
-		auto ended() const {
-			return position == MAX;
-		}
-
-		auto consumed() const {
-			return position;
+	
+		constexpr value_type operator()()
+		{
+			return generator_function(position++);
 		}
 	};
 
@@ -134,12 +138,12 @@ namespace util {
 			return *(position++);
 		}
 
-		constexpr auto skip(size_t count)
+		constexpr auto skip(size_t count = 1)
 		{
 			std::ranges::advance(position, count, std::ranges::end(source));
 			return *this;
 		}
-
+		
 		auto ended() const {
 			return position == std::end(source);
 		}
@@ -149,10 +153,20 @@ namespace util {
 		}
 	};
 
-	namespace test {
-		static_assert(simple_generator<constexpr_random<size_t, 0, 10>, size_t>);
-		static_assert(simple_generator<generate_from<std::array<int, 3>>, int>);
-		static_assert(simple_generator<generator<std::identity>, size_t>);
+	namespace test
+	{
+		static_assert(simple_generator<constexpr_random<size_t, 0, 10>>);
+		static_assert(simple_generator<generate_from<std::array<int, 3>>>);
+		static_assert(simple_generator<generator<std::identity>>);
+	}
+
+	template <std::size_t SIZE, simple_generator GENERATOR_TYPE>
+	constexpr auto generate_array(GENERATOR_TYPE generator, std::size_t skip = 0)
+	{
+		auto result = std::array<typename GENERATOR_TYPE::value_type, SIZE>{};
+		generator.skip(skip);
+		std::generate(std::begin(result), std::end(result), generator);
+		return result;
 	}
 }
 
