@@ -11,14 +11,14 @@
 #include <string>
 #include <ranges>
 
-namespace dna
-{
+namespace dna {
 
-template<typename T>
-concept HelixStream = requires(T a) {
-	{ a.seek(long{}) };
-	{ a.read() } -> is_sequence_buffer;
-	{ a.size() } -> std::convertible_to<std::size_t>;
+template <typename T>
+concept HelixStream = requires(T a)
+{
+    { a.seek(long {}) };
+    { a.read() } -> is_sequence_buffer;
+    { a.size() } -> std::convertible_to<std::size_t>;
 };
 
 struct Location {
@@ -29,9 +29,9 @@ struct Location {
     { }
 
     friend std::ostream& operator<<(std::ostream& out, Location loc)
-	{
+    {
         return out << '[' << loc.pos << ']';
-	}
+    }
 };
 
 struct InterestingLocation {
@@ -90,3 +90,4 @@ auto locate_interesting(is_sequence_view auto& start_source, is_sequence_view au
     return result;
 }
 
+}
