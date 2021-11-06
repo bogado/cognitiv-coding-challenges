@@ -1,10 +1,12 @@
 #pragma once
 
+#include "base.hpp"
+
 #include <cstddef>
 #include <concepts>
 #include <iterator>
 #include <ranges>
-#include "base.hpp"
+#include <vector>
 
 namespace dna
 {
@@ -22,6 +24,12 @@ template <typename T>
 concept is_sequence_buffer = requires(const T sequence_buffer) {
 	typename T::buffer_type;
 	{ sequence_buffer.buffer() } -> std::common_reference_with<typename T::buffer_type>;
+};
+
+template <typename T>
+concept is_sequence_view = requires {
+	std::ranges::view<T>;
+	std::same_as<std::ranges::range_value_t<T>, base>;
 };
 
 template<ByteBuffer T>
@@ -124,6 +132,7 @@ public:
 
 };
 
+
 template<ByteBuffer T>
 class sequence_buffer
 {
@@ -180,6 +189,7 @@ public:
 	}
 };
 
+static_assert(is_sequence_view<sequence_buffer<std::vector<std::byte>>>);
 
 template<ByteBuffer T>
 constexpr typename sequence_buffer_iterator<T>::value_type sequence_buffer_iterator<T>::operator*() const
@@ -214,13 +224,6 @@ constexpr auto pack_sequence(const SEQUENCE_TYPE& source, OUTPUT_ITERATOR out) {
 			});
 		return pack(data[0], data[1], data[2], data[3]);
 	});
-}
-
-template <size_t SIZE>
-constexpr auto to_sequence_buffer(std::array<base, SIZE> sequence)
-{
-	auto result = std::array<std::byte, SIZE/4>{};
-	return sequence_buffer(to_sequence_buffer(sequence), SIZE);
 }
 
 }
