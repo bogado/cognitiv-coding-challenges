@@ -120,12 +120,12 @@ public:
 		return sequence_buffer_iterator(buf_, index_ - diff);
 	}
 
-	constexpr bool operator==(const sequence_buffer_iterator& other) noexcept
+	constexpr bool operator==(const sequence_buffer_iterator& other) const noexcept
 	{
 		return buf_ == other.buf_ && index_ == other.index_;
 	}
 
-	constexpr bool operator!=(const sequence_buffer_iterator& other) noexcept
+	constexpr bool operator!=(const sequence_buffer_iterator& other) const noexcept
 	{
 		return !operator==(other);
 	}
@@ -219,7 +219,7 @@ constexpr auto pack_sequence(const SEQUENCE_TYPE& source, OUTPUT_ITERATOR out) {
 					return base {};
 				}
 				auto result = *iterator;
-				std::advance(iterator);
+				std::advance(iterator, 1);
 				return result;
 			});
 		return pack(data[0], data[1], data[2], data[3]);
