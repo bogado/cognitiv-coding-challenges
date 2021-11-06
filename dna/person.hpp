@@ -57,5 +57,36 @@ concept Person = requires(T a)
     { a.chromosomes() } -> std::convertible_to<std::size_t>; 
 };
 
+auto locate_interesting(is_sequence_view auto& start_source, is_sequence_view auto& start_target, int chromosome_num = InterestingLocation::NOT_DEFINED)
+{
+    auto result = std::vector<InterestingLocation> {};
+
+    auto source = std::ranges::subrange(start_source);
+    auto target = std::ranges::subrange(start_target);
+
+	const auto source_begin = std::ranges::begin(source);
+	const auto target_begin = std::ranges::begin(target);
+
+	const auto source_end = std::ranges::end(source);
+	const auto target_end = std::ranges::end(target);
+
+    while (!std::ranges::empty(source) && !std::ranges::empty(target)) {
+        auto [found_source, found_target] = std::ranges::mismatch(source, target);
+
+		if (found_source == source_end || found_target == target_end) break;
+
+		source.advance(std::ranges::distance(std::ranges::begin(source), found_source));
+		target.advance(std::ranges::distance(std::ranges::begin(target), found_target));
+
+        auto found_result = check(source, target);
+
+        if (found_result.found.has_value()) {
+			auto loc = Location(source_begin, std::begin(source));
+            result.push_back(InterestingLocation{ found_result.found.value(), loc, chromosome_num });
+        }
+		source = found_result.source;
+		target = found_result.target;
+    }
+    return result;
 }
 
